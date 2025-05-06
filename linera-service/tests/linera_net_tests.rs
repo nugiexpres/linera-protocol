@@ -352,28 +352,28 @@ async fn test_evm_end_to_end_counter(config: impl LineraNetConfig) -> Result<()>
         }
         function increment(uint64 input);
         function get_value();
+        function failing_function();
     }
 
     let original_counter_value = 35;
-    let instantiation_argument = ConstructorArgs {
+    let constructor_argument = ConstructorArgs {
         initial_value: original_counter_value,
     };
-    let instantiation_argument = instantiation_argument.abi_encode();
+    let constructor_argument = constructor_argument.abi_encode();
 
     let increment = 5;
 
     let chain = client.load_wallet()?.default_chain().unwrap();
 
     let (evm_contract, _dir) = get_evm_contract_path("tests/fixtures/evm_example_counter.sol")?;
-    type Parameter = ();
-    type InstantiationArgument = Vec<u8>;
 
+    let instantiation_argument = Vec::new();
     let application_id = client
-        .publish_and_create::<EvmAbi, Parameter, InstantiationArgument>(
+        .publish_and_create::<EvmAbi, Vec<u8>, Vec<u8>>(
             evm_contract.clone(),
             evm_contract,
             VmRuntime::Evm,
-            &(),
+            &constructor_argument,
             &instantiation_argument,
             &[],
             None,
@@ -381,11 +381,17 @@ async fn test_evm_end_to_end_counter(config: impl LineraNetConfig) -> Result<()>
         .await?;
 
     let port = get_node_port().await;
-    let node_service = client.run_node_service(port, ProcessInbox::Skip).await?;
+    let mut node_service = client.run_node_service(port, ProcessInbox::Skip).await?;
 
     let application = node_service
         .make_application(&chain, &application_id)
         .await?;
+
+    let failing_function = failing_functionCall {};
+    let failing_function = failing_function.abi_encode();
+    let failing_function = EvmQuery::Query(failing_function);
+    let result = application.run_json_query(failing_function).await;
+    assert!(result.is_err());
 
     let query = get_valueCall {};
     let query = query.abi_encode();
@@ -403,6 +409,8 @@ async fn test_evm_end_to_end_counter(config: impl LineraNetConfig) -> Result<()>
     let result = application.run_json_query(query).await?;
     let counter_value = read_evm_u64_entry(result);
     assert_eq!(counter_value, original_counter_value + increment);
+
+    node_service.ensure_is_running()?;
 
     net.ensure_is_running().await?;
     net.terminate().await?;
@@ -437,21 +445,21 @@ async fn test_wasm_call_evm_end_to_end_counter(config: impl LineraNetConfig) -> 
     }
 
     let original_counter_value = 35;
-    let evm_instantiation_argument = ConstructorArgs {
+    let constructor_argument = ConstructorArgs {
         initial_value: original_counter_value,
     };
-    let evm_instantiation_argument = evm_instantiation_argument.abi_encode();
+    let constructor_argument = constructor_argument.abi_encode();
 
     let (evm_contract, _dir) = get_evm_contract_path("tests/fixtures/evm_example_counter.sol")?;
-    type InstantiationArgument = Vec<u8>;
 
+    let instantiation_argument = Vec::new();
     let evm_application_id = client
-        .publish_and_create::<EvmAbi, (), InstantiationArgument>(
+        .publish_and_create::<EvmAbi, Vec<u8>, Vec<u8>>(
             evm_contract.clone(),
             evm_contract,
             VmRuntime::Evm,
-            &(),
-            &evm_instantiation_argument,
+            &constructor_argument,
+            &instantiation_argument,
             &[],
             None,
         )
@@ -523,28 +531,27 @@ async fn test_evm_call_evm_end_to_end_counter(config: impl LineraNetConfig) -> R
 
     let (evm_contract, _dir) = get_evm_contract_path("tests/fixtures/evm_example_counter.sol")?;
 
-    let evm_instantiation_argument = {
+    let constructor_argument = {
         sol! {
             struct ConstructorArgs {
                 uint64 initial_value;
             }
         }
 
-        let evm_instantiation_argument = ConstructorArgs {
+        let constructor_argument = ConstructorArgs {
             initial_value: original_counter_value,
         };
-        evm_instantiation_argument.abi_encode()
+        constructor_argument.abi_encode()
     };
 
-    type InstantiationArgument = Vec<u8>;
-
+    let instantiation_argument = Vec::new();
     let evm_application_id = client
-        .publish_and_create::<EvmAbi, (), InstantiationArgument>(
+        .publish_and_create::<EvmAbi, Vec<u8>, Vec<u8>>(
             evm_contract.clone(),
             evm_contract,
             VmRuntime::Evm,
-            &(),
-            &evm_instantiation_argument,
+            &constructor_argument,
+            &instantiation_argument,
             &[],
             None,
         )
@@ -561,20 +568,19 @@ async fn test_evm_call_evm_end_to_end_counter(config: impl LineraNetConfig) -> R
     }
 
     let evm_contract = evm_application_id.evm_address();
-    let nest_instantiation_argument = ConstructorArgs { evm_contract };
-    let nest_instantiation_argument = nest_instantiation_argument.abi_encode();
+    let nest_constructor_argument = ConstructorArgs { evm_contract };
+    let nest_constructor_argument = nest_constructor_argument.abi_encode();
 
     let (nest_contract, _dir) =
         get_evm_contract_path("tests/fixtures/evm_call_evm_example_counter.sol")?;
 
-    type NestInstantiationArgument = Vec<u8>;
     let nest_application_id = client
-        .publish_and_create::<EvmAbi, (), NestInstantiationArgument>(
+        .publish_and_create::<EvmAbi, Vec<u8>, Vec<u8>>(
             nest_contract.clone(),
             nest_contract,
             VmRuntime::Evm,
-            &(),
-            &nest_instantiation_argument,
+            &nest_constructor_argument,
+            &instantiation_argument,
             &[],
             None,
         )
@@ -657,20 +663,20 @@ async fn test_evm_call_wasm_end_to_end_counter(config: impl LineraNetConfig) -> 
     }
 
     let wasm_contract = wasm_application_id.bytes32();
-    let nest_instantiation_argument = ConstructorArgs { wasm_contract };
-    let nest_instantiation_argument = nest_instantiation_argument.abi_encode();
+    let nest_constructor_argument = ConstructorArgs { wasm_contract };
+    let nest_constructor_argument = nest_constructor_argument.abi_encode();
 
     let (nest_contract, _dir) =
         get_evm_contract_path("tests/fixtures/evm_call_wasm_example_counter.sol")?;
 
-    type NestInstantiationArgument = Vec<u8>;
+    let instantiation_argument = Vec::new();
     let nest_application_id = client
-        .publish_and_create::<EvmAbi, (), NestInstantiationArgument>(
+        .publish_and_create::<EvmAbi, Vec<u8>, Vec<u8>>(
             nest_contract.clone(),
             nest_contract,
             VmRuntime::Evm,
-            &(),
-            &nest_instantiation_argument,
+            &nest_constructor_argument,
+            &instantiation_argument,
             &[],
             None,
         )
@@ -701,6 +707,120 @@ async fn test_evm_call_wasm_end_to_end_counter(config: impl LineraNetConfig) -> 
     assert_eq!(counter_value, original_counter_value + increment);
 
     node_service.ensure_is_running()?;
+
+    net.ensure_is_running().await?;
+    net.terminate().await?;
+
+    Ok(())
+}
+
+#[cfg(with_revm)]
+#[cfg_attr(feature = "storage-service", test_case(LocalNetConfig::new_test(Database::Service, Network::Grpc) ; "storage_test_service_grpc"))]
+#[cfg_attr(feature = "scylladb", test_case(LocalNetConfig::new_test(Database::ScyllaDb, Network::Grpc) ; "scylladb_grpc"))]
+#[cfg_attr(feature = "dynamodb", test_case(LocalNetConfig::new_test(Database::DynamoDb, Network::Grpc) ; "aws_grpc"))]
+#[cfg_attr(feature = "kubernetes", test_case(SharedLocalKubernetesNetTestingConfig::new(Network::Grpc, BuildArg::Build) ; "kubernetes_grpc"))]
+#[cfg_attr(feature = "remote-net", test_case(RemoteNetTestingConfig::new(None) ; "remote_net_grpc"))]
+#[test_log::test(tokio::test)]
+async fn test_evm_execute_message_end_to_end_counter(config: impl LineraNetConfig) -> Result<()> {
+    use alloy_primitives::B256;
+    use alloy_sol_types::{sol, SolCall, SolValue};
+    use linera_base::vm::EvmQuery;
+    use linera_execution::test_utils::solidity::{get_evm_contract_path, read_evm_u64_entry};
+    use linera_sdk::abis::evm::EvmAbi;
+    let _guard = INTEGRATION_TEST_GUARD.lock().await;
+    tracing::info!("Starting test {}", test_name!());
+
+    let (mut net, client1) = config.instantiate().await?;
+
+    let client2 = net.make_client().await;
+    client2.wallet_init(&[], FaucetOption::None).await?;
+
+    let chain1 = client1.load_wallet()?.default_chain().unwrap();
+    let chain2 = client1.open_and_assign(&client2, Amount::ONE).await?;
+
+    let original_value = 35;
+    let moved_value = 5;
+
+    // Creating the API of the contracts
+
+    sol! {
+        function move_value_to_chain(bytes32 chain_id, uint64 moved_value);
+        function get_value();
+    }
+
+    let constructor_argument = Vec::new();
+
+    let instantiation_argument: Vec<u8> = u64::abi_encode(&original_value);
+
+    let (evm_contract, _dir) =
+        get_evm_contract_path("tests/fixtures/evm_example_execute_message.sol")?;
+
+    let application_id = client1
+        .publish_and_create::<EvmAbi, Vec<u8>, Vec<u8>>(
+            evm_contract.clone(),
+            evm_contract,
+            VmRuntime::Evm,
+            &constructor_argument,
+            &instantiation_argument,
+            &[],
+            None,
+        )
+        .await?;
+
+    let port1 = get_node_port().await;
+    let port2 = get_node_port().await;
+    let mut node_service1 = client1.run_node_service(port1, ProcessInbox::Skip).await?;
+    let mut node_service2 = client2.run_node_service(port2, ProcessInbox::Skip).await?;
+
+    // Creating the applications.
+
+    let application1 = node_service1
+        .make_application(&chain1, &application_id)
+        .await?;
+
+    let application2 = node_service2
+        .make_application(&chain2, &application_id)
+        .await?;
+
+    // Now checking the APIs.
+    // First: checking the initial value of the contracts.
+
+    let query = get_valueCall {};
+    let query = query.abi_encode();
+    let query = EvmQuery::Query(query);
+    let result = application1.run_json_query(query.clone()).await?;
+    let counter_value = read_evm_u64_entry(result);
+    assert_eq!(counter_value, original_value);
+    let result = application2.run_json_query(query.clone()).await?;
+    let counter_value = read_evm_u64_entry(result);
+    assert_eq!(counter_value, 0);
+
+    // Second: executing the movement of assets
+
+    let chain_id: [u64; 4] = <[u64; 4]>::from(chain2.0);
+    let chain_id: [u8; 32] = linera_base::crypto::u64_array_to_be_bytes(chain_id);
+    let chain_id: B256 = chain_id.into();
+    let mutation = move_value_to_chainCall {
+        chain_id,
+        moved_value,
+    };
+    let mutation = mutation.abi_encode();
+    let mutation = EvmQuery::Mutation(mutation);
+    application1.run_json_query(mutation).await?;
+
+    node_service2.process_inbox(&chain2).await?;
+
+    // Third: Checking the values after the move
+
+    let result = application1.run_json_query(query.clone()).await?;
+    let counter_value = read_evm_u64_entry(result);
+    assert_eq!(counter_value, original_value - moved_value);
+    let result = application2.run_json_query(query.clone()).await?;
+    let counter_value = read_evm_u64_entry(result);
+    assert_eq!(counter_value, moved_value);
+
+    node_service1.ensure_is_running()?;
+    node_service2.ensure_is_running()?;
 
     net.ensure_is_running().await?;
     net.terminate().await?;
@@ -1169,12 +1289,8 @@ async fn test_wasm_end_to_end_same_wallet_fungible(
 
     // The players
     let account_owner1 = get_fungible_account_owner(&client1);
-    let account_owner2 = {
-        let wallet = client1.load_wallet()?;
-        let user_chain = wallet.get(chain2).unwrap();
-        let public_key = user_chain.key_pair.as_ref().unwrap().public();
-        AccountOwner::from(public_key)
-    };
+    let account_owner2 = client1.keygen().await?;
+
     // The initial accounts on chain1
     let accounts = BTreeMap::from([
         (account_owner1, Amount::from_tokens(5)),
@@ -1220,14 +1336,11 @@ async fn test_wasm_end_to_end_same_wallet_fungible(
         }
     );
 
-    let expected_balances = [
-        (account_owner1, Amount::from_tokens(5)),
-        (account_owner2, Amount::from_tokens(2)),
-    ];
-    app1.assert_balances(expected_balances).await;
+    let expected_balances: Vec<(AccountOwner, Amount)> = state.accounts.into_iter().collect();
+
+    app1.assert_balances(expected_balances.clone()).await;
     app1.assert_entries(expected_balances).await;
     app1.assert_keys([account_owner1, account_owner2]).await;
-
     // Transferring
     app1.transfer(
         &account_owner1,
@@ -2686,16 +2799,7 @@ async fn test_open_chain_node_service(config: impl LineraNetConfig) -> Result<()
     let (mut net, client) = config.instantiate().await?;
 
     let chain1 = client.load_wallet()?.default_chain().unwrap();
-    let owner1 = AccountOwner::from(
-        client
-            .load_wallet()?
-            .get(chain1)
-            .unwrap()
-            .key_pair
-            .as_ref()
-            .unwrap()
-            .public(),
-    );
+    let owner1 = client.load_wallet()?.get(chain1).unwrap().owner.unwrap();
 
     // Create a fungible token application with 10 tokens for owner 1.
     let owner = get_fungible_account_owner(&client);
@@ -2820,12 +2924,12 @@ async fn test_end_to_end_multiple_wallets(config: impl LineraNetConfig) -> Resul
     let owner2 = client2.keygen().await?;
 
     // Open chain on behalf of Client 2.
-    let (message_id, chain2, _) = client1
+    let (chain2, _) = client1
         .open_chain(chain1, Some(owner2), Amount::ZERO)
         .await?;
 
     // Assign chain2 to client2_key.
-    assert_eq!(chain2, client2.assign(owner2, message_id).await?);
+    client2.assign(owner2, chain2).await?;
 
     // Transfer a token to chain 2. Check that this increases the local balance, proving
     // that client 2 can create blocks on that chain.
@@ -2866,7 +2970,7 @@ async fn test_end_to_end_open_multi_owner_chain(config: impl LineraNetConfig) ->
     let owner2 = client2.keygen().await?;
 
     // Open a chain owned by both clients.
-    let (message_id, chain2) = client1
+    let chain2 = client1
         .open_multi_owner_chain(
             chain1,
             vec![owner1, owner2],
@@ -2878,10 +2982,10 @@ async fn test_end_to_end_open_multi_owner_chain(config: impl LineraNetConfig) ->
         .await?;
 
     // Assign chain2 to client1_key.
-    assert_eq!(chain2, client1.assign(owner1, message_id).await?);
+    client1.assign(owner1, chain2).await?;
 
     // Assign chain2 to client2_key.
-    assert_eq!(chain2, client2.assign(owner2, message_id).await?);
+    client2.assign(owner2, chain2).await?;
 
     client2.sync(chain2).await?;
 
@@ -2930,8 +3034,9 @@ async fn test_end_to_end_change_ownership(config: impl LineraNetConfig) -> Resul
     let owner1 = {
         let wallet = client.load_wallet()?;
         let user_chain = wallet.get(chain).unwrap();
-        user_chain.key_pair.as_ref().unwrap().public().into()
+        user_chain.owner.unwrap()
     };
+    // Generate an owner for which we don't have a secret key in the Signer.
     let owner2 = AccountPublicKey::test_key(2).into();
 
     // Make both keys owners.
@@ -2941,7 +3046,7 @@ async fn test_end_to_end_change_ownership(config: impl LineraNetConfig) -> Resul
 
     // Make owner2 the only (super) owner.
     client.change_ownership(chain, vec![owner2], vec![]).await?;
-
+    client.set_preffered_owner(chain, Some(owner2)).await?;
     // Now we're not the owner anymore.
     let result = client.change_ownership(chain, vec![], vec![owner1]).await;
     assert_matches::assert_matches!(result, Err(_));
@@ -2968,20 +3073,23 @@ async fn test_end_to_end_assign_greatgrandchild_chain(config: impl LineraNetConf
     let client2 = net.make_client().await;
     client2.wallet_init(&[], FaucetOption::None).await?;
 
+    let client3 = net.make_client().await;
+    client3.wallet_init(&[], FaucetOption::None).await?;
+
     let chain1 = *client1.load_wallet()?.chain_ids().first().unwrap();
 
     // Generate keys for client 2.
     let owner2 = client2.keygen().await?;
 
     // Open a great-grandchild chain on behalf of client 2.
-    let (_, grandparent, _) = client1
+    let (grandparent, _) = client1
         .open_chain(chain1, None, Amount::from_tokens(2))
         .await?;
-    let (_, parent, _) = client1.open_chain(grandparent, None, Amount::ONE).await?;
-    let (message_id, chain2, _) = client1
+    let (parent, _) = client1.open_chain(grandparent, None, Amount::ONE).await?;
+    let (chain2, _) = client1
         .open_chain(parent, Some(owner2), Amount::ZERO)
         .await?;
-    client2.assign(owner2, message_id).await?;
+    client2.assign(owner2, chain2).await?;
 
     // Transfer a token to chain 2. Check that this increases the local balance, proving
     // that client 2 can create blocks on that chain.
@@ -2991,6 +3099,11 @@ async fn test_end_to_end_assign_greatgrandchild_chain(config: impl LineraNetConf
     client2.sync(chain2).await?;
     client2.process_inbox(chain2).await?;
     assert!(client2.local_balance(account2).await? > Amount::ZERO);
+
+    // Verify that a third party can also follow the chain.
+    client3.follow_chain(chain2).await?;
+    client3.sync(chain2).await?;
+    assert!(client3.local_balance(account2).await? > Amount::ZERO);
 
     net.ensure_is_running().await?;
     net.terminate().await?;
@@ -3058,7 +3171,6 @@ async fn test_end_to_end_faucet(config: impl LineraNetConfig) -> Result<()> {
     let faucet = faucet_service.instance();
     let outcome = faucet.claim(&owner2).await?;
     let chain2 = outcome.chain_id;
-    let message_id = outcome.message_id;
 
     // Test version info.
     let info = faucet.version_info().await?;
@@ -3095,7 +3207,7 @@ async fn test_end_to_end_faucet(config: impl LineraNetConfig) -> Result<()> {
     assert!(faucet_balance > balance1 - Amount::from_tokens(9));
 
     // Assign chain2 to client2_key.
-    assert_eq!(chain2, client2.assign(owner2, message_id).await?);
+    client2.assign(owner2, chain2).await?;
 
     // Clients 2 and 3 should have the tokens, and own the chain.
     client2.sync(chain2).await?;
@@ -3139,7 +3251,7 @@ async fn test_end_to_end_faucet_with_long_chains(config: impl LineraNetConfig) -
 
     // Use the faucet directly to initialize many chains
     for _ in 0..chain_count {
-        let (_, new_chain_id, _) = faucet_client
+        let (new_chain_id, _) = faucet_client
             .open_chain(faucet_chain, None, Amount::ONE)
             .await?;
         faucet_client.forget_chain(new_chain_id).await?;
@@ -3252,7 +3364,7 @@ async fn test_end_to_end_listen_for_new_rounds(config: impl LineraNetConfig) -> 
     // Open a chain owned by both clients, with only single-leader rounds.
     let owner1 = client1.keygen().await?;
     let owner2 = client2.keygen().await?;
-    let (message_id, chain2) = client1
+    let chain2 = client1
         .open_multi_owner_chain(
             chain1,
             vec![owner1, owner2],
@@ -3262,8 +3374,8 @@ async fn test_end_to_end_listen_for_new_rounds(config: impl LineraNetConfig) -> 
             u64::MAX,
         )
         .await?;
-    client1.assign(owner1, message_id).await?;
-    client2.assign(owner2, message_id).await?;
+    client1.assign(owner1, chain2).await?;
+    client2.assign(owner2, chain2).await?;
     client2.sync(chain2).await?;
 
     let (tx, mut rx) = mpsc::channel(8);

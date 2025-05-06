@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use linera_base::{
     crypto::{AccountPublicKey, CryptoHash, ValidatorPublicKey},
     data_types::Amount,
-    identifiers::{Account, AccountOwner, ApplicationId, ChainId, MessageId, ModuleId},
+    identifiers::{Account, AccountOwner, ApplicationId, ChainId, ModuleId},
     time::Duration,
     vm::VmRuntime,
 };
@@ -86,6 +86,17 @@ pub enum ClientCommand {
 
         #[clap(flatten)]
         ownership_config: ChainOwnershipConfig,
+    },
+
+    /// Change the preferred owner of a chain.
+    SetPreferredOwner {
+        /// The ID of the chain whose preferred owner will be changed.
+        #[clap(long)]
+        chain_id: Option<ChainId>,
+
+        /// The new preferred owner.
+        #[arg(long)]
+        owner: AccountOwner,
     },
 
     /// Changes the application permissions configuration.
@@ -228,9 +239,13 @@ pub enum ClientCommand {
         #[arg(long)]
         block: Option<Amount>,
 
-        /// Set the price per unit of fuel.
+        /// Set the price per unit of Wasm fuel.
         #[arg(long)]
-        fuel_unit: Option<Amount>,
+        wasm_fuel_unit: Option<Amount>,
+
+        /// Set the price per unit of EVM fuel.
+        #[arg(long)]
+        evm_fuel_unit: Option<Amount>,
 
         /// Set the price per read operation.
         #[arg(long)]
@@ -292,9 +307,13 @@ pub enum ClientCommand {
         #[arg(long)]
         http_request: Option<Amount>,
 
-        /// Set the maximum amount of fuel per block.
+        /// Set the maximum amount of Wasm fuel per block.
         #[arg(long)]
-        maximum_fuel_per_block: Option<u64>,
+        maximum_wasm_fuel_per_block: Option<u64>,
+
+        /// Set the maximum amount of EVM fuel per block.
+        #[arg(long)]
+        maximum_evm_fuel_per_block: Option<u64>,
 
         /// Set the maximum time in milliseconds that a block can spend executing services as oracles.
         #[arg(long)]
@@ -431,10 +450,15 @@ pub enum ClientCommand {
         #[arg(long)]
         block_price: Option<Amount>,
 
-        /// Set the price per unit of fuel.
+        /// Set the price per unit of Wasm fuel.
         /// (This will overwrite value from `--policy-config`)
         #[arg(long)]
-        fuel_unit_price: Option<Amount>,
+        wasm_fuel_unit_price: Option<Amount>,
+
+        /// Set the price per unit of EVM fuel.
+        /// (This will overwrite value from `--policy-config`)
+        #[arg(long)]
+        evm_fuel_unit_price: Option<Amount>,
 
         /// Set the price per read operation.
         /// (This will overwrite value from `--policy-config`)
@@ -509,10 +533,15 @@ pub enum ClientCommand {
         #[arg(long)]
         http_request_price: Option<Amount>,
 
-        /// Set the maximum amount of fuel per block.
+        /// Set the maximum amount of Wasm fuel per block.
         /// (This will overwrite value from `--policy-config`)
         #[arg(long)]
-        maximum_fuel_per_block: Option<u64>,
+        maximum_wasm_fuel_per_block: Option<u64>,
+
+        /// Set the maximum amount of EVM fuel per block.
+        /// (This will overwrite value from `--policy-config`)
+        #[arg(long)]
+        maximum_evm_fuel_per_block: Option<u64>,
 
         /// Set the maximum time in milliseconds that a block can spend executing services as oracles.
         #[arg(long)]
@@ -731,16 +760,17 @@ pub enum ClientCommand {
     /// Create an unassigned key pair.
     Keygen,
 
-    /// Link an owner with a key pair in the wallet to a chain that was created for that owner.
+    /// Link the owner to the chain.
+    /// Expects that the caller has a private key corresponding to the `public_key`,
+    /// otherwise block proposals will fail when signing with it.
     Assign {
         /// The owner to assign.
         #[arg(long)]
         owner: AccountOwner,
 
-        /// The ID of the message that created the chain. (This uniquely describes the
-        /// chain and where it was created.)
+        /// The ID of the chain.
         #[arg(long)]
-        message_id: MessageId,
+        chain_id: ChainId,
     },
 
     /// Retry a block we unsuccessfully tried to propose earlier.
@@ -797,6 +827,7 @@ impl ClientCommand {
             | ClientCommand::OpenChain { .. }
             | ClientCommand::OpenMultiOwnerChain { .. }
             | ClientCommand::ChangeOwnership { .. }
+            | ClientCommand::SetPreferredOwner { .. }
             | ClientCommand::ChangeApplicationPermissions { .. }
             | ClientCommand::CloseChain { .. }
             | ClientCommand::LocalBalance { .. }

@@ -3,14 +3,12 @@
 
 use criterion::{criterion_group, criterion_main, measurement::Measurement, BatchSize, Criterion};
 use linera_base::{
+    crypto::InMemorySigner,
     data_types::Amount,
     identifiers::{Account, AccountOwner},
     time::Duration,
 };
-use linera_core::{
-    client,
-    test_utils::{MemoryStorageBuilder, NodeProvider, StorageBuilder, TestBuilder},
-};
+use linera_core::test_utils::{ChainClient, MemoryStorageBuilder, StorageBuilder, TestBuilder};
 use linera_execution::system::Recipient;
 use linera_storage::{
     READ_CERTIFICATE_COUNTER, READ_CONFIRMED_BLOCK_COUNTER, WRITE_CERTIFICATE_COUNTER,
@@ -20,25 +18,23 @@ use prometheus::core::Collector;
 use recorder::BenchRecorderMeasurement;
 use tokio::runtime;
 
-type ChainClient<B> = client::ChainClient<
-    NodeProvider<<B as StorageBuilder>::Storage>,
-    <B as StorageBuilder>::Storage,
->;
-
 mod recorder;
 
 /// Creates root chains 1 and 2, the first one with a positive balance.
-pub fn setup_claim_bench<B>() -> (ChainClient<B>, ChainClient<B>)
+pub fn setup_claim_bench<B>() -> (ChainClient<B::Storage>, ChainClient<B::Storage>)
 where
     B: StorageBuilder + Default,
 {
     let storage_builder = B::default();
+    let mut signer = InMemorySigner::new(None);
     // Criterion doesn't allow setup functions to be async, but it runs them inside an async
     // context. But our setup uses async functions:
     let handle = runtime::Handle::current();
     let _guard = handle.enter();
     futures::executor::block_on(async move {
-        let mut builder = TestBuilder::new(storage_builder, 4, 1).await.unwrap();
+        let mut builder = TestBuilder::new(storage_builder, 4, 1, &mut signer)
+            .await
+            .unwrap();
         let chain1 = builder
             .add_root_chain(1, Amount::from_tokens(10))
             .await
@@ -50,8 +46,9 @@ where
 
 /// Sends a token from the first chain to the first chain's owner on chain 2, then
 /// reclaims that amount.
-pub async fn run_claim_bench<B>((chain1, chain2): (ChainClient<B>, ChainClient<B>))
-where
+pub async fn run_claim_bench<B>(
+    (chain1, chain2): (ChainClient<B::Storage>, ChainClient<B::Storage>),
+) where
     B: StorageBuilder,
 {
     let owner1 = chain1.identity().await.unwrap();

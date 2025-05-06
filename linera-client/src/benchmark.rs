@@ -4,7 +4,6 @@
 use std::{collections::HashMap, iter, sync::Arc};
 
 use linera_base::{
-    crypto::{AccountPublicKey, AccountSecretKey},
     data_types::{Amount, Epoch, Timestamp},
     identifiers::{AccountOwner, ApplicationId, ChainId},
     listen_for_shutdown_signals,
@@ -14,15 +13,13 @@ use linera_chain::{
     data_types::{BlockProposal, ProposedBlock},
     types::ConfirmedBlock,
 };
-use linera_core::{client::ChainClient, local_node::LocalNodeClient};
+use linera_core::{client::ChainClient, local_node::LocalNodeClient, Environment};
 use linera_execution::{
     committee::Committee,
     system::{Recipient, SystemOperation},
     Operation,
 };
-use linera_rpc::node_provider::NodeProvider;
 use linera_sdk::abis::fungible;
-use linera_storage::Storage;
 use num_format::{Locale, ToFormattedString};
 use prometheus_parse::{HistogramCount, Scrape, Value};
 use tokio::{
@@ -87,27 +84,21 @@ struct HistogramSnapshot {
     sum: f64,
 }
 
-pub struct Benchmark<Storage>
-where
-    Storage: linera_storage::Storage,
-{
-    _phantom: std::marker::PhantomData<Storage>,
+pub struct Benchmark<Env: Environment> {
+    _phantom: std::marker::PhantomData<Env>,
 }
 
-impl<S> Benchmark<S>
-where
-    S: Storage + Clone + Send + Sync + 'static,
-{
+impl<Env: Environment> Benchmark<Env> {
     #[expect(clippy::too_many_arguments)]
     pub async fn run_benchmark(
         num_chains: usize,
         transactions_per_block: usize,
         bps: Option<usize>,
-        chain_clients: HashMap<ChainId, ChainClient<NodeProvider, S>>,
+        chain_clients: HashMap<ChainId, ChainClient<Env>>,
         epoch: Epoch,
-        blocks_infos: Vec<(ChainId, Vec<Operation>, AccountSecretKey)>,
+        blocks_infos: Vec<(ChainId, Vec<Operation>, AccountOwner)>,
         committee: Committee,
-        local_node: LocalNodeClient<S>,
+        local_node: LocalNodeClient<Env::Storage>,
         health_check_endpoints: Option<String>,
     ) -> Result<(), BenchmarkError> {
         let shutdown_notifier = CancellationToken::new();
@@ -190,7 +181,7 @@ where
 
         let barrier = Arc::new(Barrier::new(num_chains));
         let mut join_set = task::JoinSet::<Result<(), BenchmarkError>>::new();
-        for (chain_id, operations, key_pair) in blocks_infos {
+        for (chain_id, operations, chain_owner) in blocks_infos {
             let bps_share = if bps_remainder > 0 {
                 bps_remainder -= 1;
                 bps_share.map(|share| share + 1)
@@ -211,9 +202,9 @@ where
                 handle.block_on(
                     async move {
                         Box::pin(Self::run_benchmark_internal(
+                            chain_owner,
                             bps_share,
                             operations,
-                            key_pair,
                             epoch,
                             chain_client,
                             shutdown_notifier,
@@ -500,15 +491,15 @@ where
 
     #[expect(clippy::too_many_arguments)]
     async fn run_benchmark_internal(
+        signer: AccountOwner,
         bps: Option<usize>,
         operations: Vec<Operation>,
-        key_pair: AccountSecretKey,
         epoch: Epoch,
-        chain_client: ChainClient<NodeProvider, S>,
+        chain_client: ChainClient<Env>,
         shutdown_notifier: CancellationToken,
         sender: crossbeam_channel::Sender<()>,
         committee: Committee,
-        local_node: LocalNodeClient<S>,
+        local_node: LocalNodeClient<Env::Storage>,
         bps_tasks_logger_sender: mpsc::Sender<()>,
         barrier: Arc<Barrier>,
     ) -> Result<(), BenchmarkError> {
@@ -521,7 +512,7 @@ where
         );
         let cross_chain_message_delivery = chain_client.options().cross_chain_message_delivery;
         let mut num_sent_proposals = 0;
-        let authenticated_signer = Some(AccountOwner::from(key_pair.public()));
+        let authenticated_signer = Some(signer);
         loop {
             if shutdown_notifier.is_cancelled() {
                 info!("Shutdown signal received, stopping benchmark");
@@ -545,10 +536,13 @@ where
 
             let value = ConfirmedBlock::new(block);
             let proposal = BlockProposal::new_initial(
+                signer,
                 linera_base::data_types::Round::Fast,
                 proposed_block,
-                &key_pair,
-            );
+                chain_client.signer(),
+            )
+            .await
+            .expect("Signer failure");
 
             chain_client
                 .submit_block_proposal(&committee, Box::new(proposal), value)
@@ -584,7 +578,7 @@ where
 
     /// Closes the chain that was created for the benchmark.
     pub async fn close_benchmark_chain(
-        chain_client: &ChainClient<NodeProvider, S>,
+        chain_client: &ChainClient<Env>,
     ) -> Result<(), BenchmarkError> {
         let start = Instant::now();
         chain_client
@@ -603,27 +597,22 @@ where
 
     /// Generates information related to one block per chain, up to `num_chains` blocks.
     pub fn make_benchmark_block_info(
-        key_pairs: HashMap<ChainId, AccountSecretKey>,
+        keys: HashMap<ChainId, AccountOwner>,
         transactions_per_block: usize,
         fungible_application_id: Option<ApplicationId>,
-    ) -> Vec<(ChainId, Vec<Operation>, AccountSecretKey)> {
+    ) -> Vec<(ChainId, Vec<Operation>, AccountOwner)> {
         let mut blocks_infos = Vec::new();
-        let mut previous_chain_id = *key_pairs
+        let mut previous_chain_id = *keys
             .iter()
             .last()
             .expect("There should be a last element")
             .0;
         let amount = Amount::from(1);
-        for (chain_id, key_pair) in key_pairs {
-            let public_key = key_pair.public();
+        for (chain_id, owner) in keys {
             let operation = match fungible_application_id {
-                Some(application_id) => Self::fungible_transfer(
-                    application_id,
-                    previous_chain_id,
-                    public_key,
-                    public_key,
-                    amount,
-                ),
+                Some(application_id) => {
+                    Self::fungible_transfer(application_id, previous_chain_id, owner, owner, amount)
+                }
                 None => Operation::system(SystemOperation::Transfer {
                     owner: AccountOwner::CHAIN,
                     recipient: Recipient::chain(previous_chain_id),
@@ -631,7 +620,7 @@ where
                 }),
             };
             let operations = iter::repeat_n(operation, transactions_per_block).collect();
-            blocks_infos.push((chain_id, operations, key_pair));
+            blocks_infos.push((chain_id, operations, owner));
             previous_chain_id = chain_id;
         }
         blocks_infos
@@ -641,16 +630,16 @@ where
     pub fn fungible_transfer(
         application_id: ApplicationId,
         chain_id: ChainId,
-        sender: AccountPublicKey,
-        receiver: AccountPublicKey,
+        sender: AccountOwner,
+        receiver: AccountOwner,
         amount: Amount,
     ) -> Operation {
         let target_account = fungible::Account {
             chain_id,
-            owner: AccountOwner::from(receiver),
+            owner: receiver,
         };
         let bytes = bcs::to_bytes(&fungible::Operation::Transfer {
-            owner: AccountOwner::from(sender),
+            owner: sender,
             amount,
             target_account,
         })

@@ -9,6 +9,7 @@ use linera_base::{
     http,
     identifiers::{Account, AccountOwner, ApplicationId, ChainId, MessageId, StreamName},
     ownership::{ChainOwnership, ChangeApplicationPermissionsError, CloseChainError},
+    vm::VmRuntime,
 };
 use linera_views::batch::{Batch, WriteOperation};
 use linera_witty::{wit_export, Instance, RuntimeError};
@@ -475,7 +476,7 @@ where
         chain_ownership: ChainOwnership,
         application_permissions: ApplicationPermissions,
         balance: Amount,
-    ) -> Result<(MessageId, ChainId), RuntimeError> {
+    ) -> Result<ChainId, RuntimeError> {
         caller
             .user_data_mut()
             .runtime
@@ -618,7 +619,7 @@ where
         caller
             .user_data_mut()
             .runtime_mut()
-            .consume_fuel(fuel)
+            .consume_fuel(fuel, VmRuntime::Wasm)
             .map_err(|e| RuntimeError::Custom(e.into()))
     }
 

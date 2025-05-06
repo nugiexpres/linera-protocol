@@ -9,6 +9,7 @@ This document contains the help content for the `linera` command-line program.
 * [`linera open-chain`↴](#linera-open-chain)
 * [`linera open-multi-owner-chain`↴](#linera-open-multi-owner-chain)
 * [`linera change-ownership`↴](#linera-change-ownership)
+* [`linera set-preferred-owner`↴](#linera-set-preferred-owner)
 * [`linera change-application-permissions`↴](#linera-change-application-permissions)
 * [`linera close-chain`↴](#linera-close-chain)
 * [`linera local-balance`↴](#linera-local-balance)
@@ -71,6 +72,7 @@ A Byzantine-fault tolerant sidechain with low-latency finality and high throughp
 * `open-chain` — Open (i.e. activate) a new chain deriving the UID from an existing one
 * `open-multi-owner-chain` — Open (i.e. activate) a new multi-owner chain deriving the UID from an existing one
 * `change-ownership` — Change who owns the chain, and how the owners work together proposing blocks
+* `set-preferred-owner` — Change the preferred owner of a chain
 * `change-application-permissions` — Changes the application permissions configuration
 * `close-chain` — Close an existing chain
 * `local-balance` — Read the current native-token balance of the given account directly from the local state
@@ -95,7 +97,7 @@ A Byzantine-fault tolerant sidechain with low-latency finality and high throughp
 * `create-application` — Create an application
 * `publish-and-create` — Create an application, and publish the required module
 * `keygen` — Create an unassigned key pair
-* `assign` — Link an owner with a key pair in the wallet to a chain that was created for that owner
+* `assign` — Link the owner to the chain. Expects that the caller has a private key corresponding to the `public_key`, otherwise block proposals will fail when signing with it
 * `retry-pending-block` — Retry a block we unsuccessfully tried to propose earlier
 * `wallet` — Show the contents of the wallet
 * `project` — Manage Linera projects
@@ -106,6 +108,7 @@ A Byzantine-fault tolerant sidechain with low-latency finality and high throughp
 
 * `--storage <STORAGE_CONFIG>` — Storage configuration for the blockchain history
 * `--wallet <WALLET_STATE_PATH>` — Sets the file storing the private state of user chains (an empty one will be created if missing)
+* `--keystore <KEYSTORE_PATH>` — Sets the file storing the keystore state
 * `-w`, `--with-wallet <WITH_WALLET>` — Given an ASCII alphanumeric parameter `X`, read the wallet state and the wallet storage config from the environment variables `LINERA_WALLET_{X}` and `LINERA_STORAGE_{X}` instead of `LINERA_WALLET` and `LINERA_STORAGE`
 * `--send-timeout-ms <SEND_TIMEOUT>` — Timeout for sending queries (milliseconds)
 
@@ -264,6 +267,19 @@ Specify the complete set of new owners, by public key. Existing owners that are 
 * `--fallback-duration-ms <FALLBACK_DURATION>` — The age of an incoming tracked or protected message after which the validators start transitioning the chain to fallback mode, in milliseconds
 
   Default value: `86400000`
+
+
+
+## `linera set-preferred-owner`
+
+Change the preferred owner of a chain
+
+**Usage:** `linera set-preferred-owner [OPTIONS] --owner <OWNER>`
+
+###### **Options:**
+
+* `--chain-id <CHAIN_ID>` — The ID of the chain whose preferred owner will be changed
+* `--owner <OWNER>` — The new preferred owner
 
 
 
@@ -457,7 +473,8 @@ View or update the resource control policy
 ###### **Options:**
 
 * `--block <BLOCK>` — Set the base price for creating a block
-* `--fuel-unit <FUEL_UNIT>` — Set the price per unit of fuel
+* `--wasm-fuel-unit <WASM_FUEL_UNIT>` — Set the price per unit of Wasm fuel
+* `--evm-fuel-unit <EVM_FUEL_UNIT>` — Set the price per unit of EVM fuel
 * `--read-operation <READ_OPERATION>` — Set the price per read operation
 * `--write-operation <WRITE_OPERATION>` — Set the price per write operation
 * `--byte-read <BYTE_READ>` — Set the price per byte read
@@ -473,7 +490,8 @@ View or update the resource control policy
 * `--message-byte <MESSAGE_BYTE>` — Set the additional price for each byte in the argument of a user message
 * `--service-as-oracle-query <SERVICE_AS_ORACLE_QUERY>` — Set the price per query to a service as an oracle
 * `--http-request <HTTP_REQUEST>` — Set the price for performing an HTTP request
-* `--maximum-fuel-per-block <MAXIMUM_FUEL_PER_BLOCK>` — Set the maximum amount of fuel per block
+* `--maximum-wasm-fuel-per-block <MAXIMUM_WASM_FUEL_PER_BLOCK>` — Set the maximum amount of Wasm fuel per block
+* `--maximum-evm-fuel-per-block <MAXIMUM_EVM_FUEL_PER_BLOCK>` — Set the maximum amount of EVM fuel per block
 * `--maximum-service-oracle-execution-ms <MAXIMUM_SERVICE_ORACLE_EXECUTION_MS>` — Set the maximum time in milliseconds that a block can spend executing services as oracles
 * `--maximum-block-size <MAXIMUM_BLOCK_SIZE>` — Set the maximum size of a block, in bytes
 * `--maximum-blob-size <MAXIMUM_BLOB_SIZE>` — Set the maximum size of data blobs, compressed bytecode and other binary blobs, in bytes
@@ -517,7 +535,8 @@ Create genesis configuration for a Linera deployment. Create initial user chains
   Possible values: `no-fees`, `testnet`
 
 * `--block-price <BLOCK_PRICE>` — Set the base price for creating a block. (This will overwrite value from `--policy-config`)
-* `--fuel-unit-price <FUEL_UNIT_PRICE>` — Set the price per unit of fuel. (This will overwrite value from `--policy-config`)
+* `--wasm-fuel-unit-price <WASM_FUEL_UNIT_PRICE>` — Set the price per unit of Wasm fuel. (This will overwrite value from `--policy-config`)
+* `--evm-fuel-unit-price <EVM_FUEL_UNIT_PRICE>` — Set the price per unit of EVM fuel. (This will overwrite value from `--policy-config`)
 * `--read-operation-price <READ_OPERATION_PRICE>` — Set the price per read operation. (This will overwrite value from `--policy-config`)
 * `--write-operation-price <WRITE_OPERATION_PRICE>` — Set the price per write operation. (This will overwrite value from `--policy-config`)
 * `--byte-read-price <BYTE_READ_PRICE>` — Set the price per byte read. (This will overwrite value from `--policy-config`)
@@ -533,7 +552,8 @@ Create genesis configuration for a Linera deployment. Create initial user chains
 * `--message-byte-price <MESSAGE_BYTE_PRICE>` — Set the additional price for each byte in the argument of a user message. (This will overwrite value from `--policy-config`)
 * `--service-as-oracle-query-price <SERVICE_AS_ORACLE_QUERY_PRICE>` — Set the price per query to a service as an oracle
 * `--http-request-price <HTTP_REQUEST_PRICE>` — Set the price for performing an HTTP request
-* `--maximum-fuel-per-block <MAXIMUM_FUEL_PER_BLOCK>` — Set the maximum amount of fuel per block. (This will overwrite value from `--policy-config`)
+* `--maximum-wasm-fuel-per-block <MAXIMUM_WASM_FUEL_PER_BLOCK>` — Set the maximum amount of Wasm fuel per block. (This will overwrite value from `--policy-config`)
+* `--maximum-evm-fuel-per-block <MAXIMUM_EVM_FUEL_PER_BLOCK>` — Set the maximum amount of EVM fuel per block. (This will overwrite value from `--policy-config`)
 * `--maximum-service-oracle-execution-ms <MAXIMUM_SERVICE_ORACLE_EXECUTION_MS>` — Set the maximum time in milliseconds that a block can spend executing services as oracles
 * `--maximum-block-size <MAXIMUM_BLOCK_SIZE>` — Set the maximum size of a block. (This will overwrite value from `--policy-config`)
 * `--maximum-bytecode-size <MAXIMUM_BYTECODE_SIZE>` — Set the maximum size of decompressed contract or service bytecode, in bytes. (This will overwrite value from `--policy-config`)
@@ -715,14 +735,14 @@ Create an unassigned key pair
 
 ## `linera assign`
 
-Link an owner with a key pair in the wallet to a chain that was created for that owner
+Link the owner to the chain. Expects that the caller has a private key corresponding to the `public_key`, otherwise block proposals will fail when signing with it
 
-**Usage:** `linera assign --owner <OWNER> --message-id <MESSAGE_ID>`
+**Usage:** `linera assign --owner <OWNER> --chain-id <CHAIN_ID>`
 
 ###### **Options:**
 
 * `--owner <OWNER>` — The owner to assign
-* `--message-id <MESSAGE_ID>` — The ID of the message that created the chain. (This uniquely describes the chain and where it was created.)
+* `--chain-id <CHAIN_ID>` — The ID of the chain
 
 
 
