@@ -25,3 +25,9 @@
 # Helm
 kubernetes/linera-validator/working/*
 node_modules
+
+# local
+docker/genesis.json
+docker/server.json
+docker/validator-config.toml
+docker/wallet.json
